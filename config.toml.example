@@ -1,0 +1,58 @@
+# UGNasSync Configuration File
+# Copyright (c) 2025 Sefier AI
+# Author: Immanuel Jeyaraj <irj@sefier.com>
+# License: GPL-3.0
+
+[nas]
+host = "192.168.1.100"
+port = 22
+username = "admin"
+# Use either password or key_path (key_path is recommended)
+password = "your_password_here"
+# key_path = "/home/user/.ssh/id_rsa"
+
+[logging]
+enabled = true
+log_file = "/var/log/ugnassync/sync.log"
+log_level = "info"  # debug, info, warn, error
+console_output = true
+file_output = true
+
+# Log rotation settings
+rotate_enabled = true
+max_file_size_mb = 10
+max_files = 5
+compress_rotated = true
+
+[[sync_profiles]]
+name = "Documents Backup"
+local_path = "/home/user/Documents"
+remote_path = "/volume1/backups/Documents"
+sync_type = "mirror"
+enabled = true
+exclude = [".git", "*.tmp", "node_modules"]
+
+# Real-time sync settings
+watch_mode = false
+debounce_seconds = 5
+
+[[sync_profiles]]
+name = "Photos Backup"
+local_path = "/home/user/Pictures"
+remote_path = "/volume1/backups/Pictures"
+sync_type = "one-way"
+enabled = true
+
+# Enable real-time sync for photos
+watch_mode = true
+debounce_seconds = 10
+
+[[sync_profiles]]
+name = "Project Files Two-Way Sync"
+local_path = "/home/user/Projects"
+remote_path = "/volume1/sync/Projects"
+sync_type = "two-way"
+enabled = true
+
+# Conflict resolution strategy
+conflict_resolution = "newest"  # skip, overwrite, keep, newest, largest

@@ -1,0 +1,20 @@
+[Unit]
+Description=UGNasSync Timer - Run NAS synchronization periodically
+Requires=ugnassync.service
+
+[Timer]
+# Run every day at 2:00 AM
+OnCalendar=daily
+OnCalendar=*-*-* 02:00:00
+
+# Run 5 minutes after boot if last run was missed
+OnBootSec=5min
+
+# If the system was off during scheduled time, run immediately on next boot
+Persistent=true
+
+# Randomize start time by up to 10 minutes to avoid network congestion
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

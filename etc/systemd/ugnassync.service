@@ -1,0 +1,25 @@
+[Unit]
+Description=UGNasSync - NAS Synchronization Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ugnassync --config /etc/ugnassync/config.toml
+User=root
+Group=root
+
+# Security settings
+PrivateTmp=yes
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/ugnassync
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ugnassync
+
+[Install]
+WantedBy=multi-user.target

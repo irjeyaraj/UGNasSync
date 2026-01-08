@@ -1,0 +1,27 @@
+[Unit]
+Description=UGNasSync Watch Mode - Real-time NAS Synchronization Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ugnassync --watch --config /etc/ugnassync/config.toml
+Restart=on-failure
+RestartSec=10s
+User=root
+Group=root
+
+# Security settings
+PrivateTmp=yes
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/ugnassync
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ugnassync-watch
+
+[Install]
+WantedBy=multi-user.target
