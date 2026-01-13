@@ -5,6 +5,7 @@
 
 use crate::config::{ConflictResolution, NasConfig, SyncProfile, SyncType};
 use crate::conflict::ConflictResolver;
+use crate::smb::SmbMount;
 use anyhow::{Context, Result};
 use std::process::Command;
 use std::time::Instant;
@@ -53,9 +54,28 @@ impl SyncEngine {
 
         let mut stats = SyncStats::default();
 
+        // Handle SMB mount if needed
+        let smb_mount = if profile.use_smb_mount {
+            if let Some(smb_config) = &self.nas_config.smb {
+                if smb_config.enabled {
+                    let mut mount = SmbMount::new(smb_config.clone());
+                    mount.mount().await?;
+                    Some(mount)
+                } else {
+                    warn!("SMB mount requested but not enabled in config");
+                    None
+                }
+            } else {
+                warn!("SMB mount requested but no SMB config found");
+                None
+            }
+        } else {
+            None
+        };
+
         // Handle two-way sync with conflict resolution
         if profile.sync_type == SyncType::TwoWay {
-            if let Some(resolver) = &self.conflict_resolver {
+            if let Some(_resolver) = &self.conflict_resolver {
                 let resolution_strategy = profile
                     .conflict_resolution
                     .as_ref()
@@ -69,7 +89,7 @@ impl SyncEngine {
         }
 
         // Build rsync command based on sync type
-        let mut cmd = self.build_rsync_command(profile, dry_run)?;
+        let mut cmd = self.build_rsync_command(profile, dry_run, smb_mount.is_some())?;
 
         debug!("Executing rsync command: {:?}", cmd);
 
@@ -103,10 +123,19 @@ impl SyncEngine {
             info!("Sync completed successfully");
         }
 
+        // Unmount SMB share if needed
+        if let Some(mut mount) = smb_mount {
+            if mount.should_auto_unmount() {
+                mount.unmount().await?;
+            } else {
+                info!("Keeping SMB mount persistent (auto_unmount = false)");
+            }
+        }
+
         Ok(stats)
     }
 
-    fn build_rsync_command(&self, profile: &SyncProfile, dry_run: bool) -> Result<Command> {
+    fn build_rsync_command(&self, profile: &SyncProfile, dry_run: bool, use_smb: bool) -> Result<Command> {
         let mut cmd = Command::new("rsync");
 
         // Common rsync flags
@@ -148,34 +177,41 @@ impl SyncEngine {
             }
         }
 
-        // Build remote path with SSH
-        let remote_path = if self.nas_config.key_path.is_some() {
-            let key_path = self.nas_config.key_path.as_ref().unwrap();
-            cmd.arg("-e")
-                .arg(format!(
-                    "ssh -p {} -i {}",
-                    self.nas_config.port, key_path
-                ));
-
-            format!(
-                "{}@{}:{}",
-                self.nas_config.username,
-                self.nas_config.host,
-                profile.remote_path
-            )
+        // Build remote path - use local path for SMB, SSH for direct rsync
+        let remote_path = if use_smb {
+            // For SMB mount, remote_path is a local path on the mounted share
+            info!("Starting rsync to local mount point");
+            profile.remote_path.clone()
         } else {
-            // Using sshpass for password authentication (requires sshpass to be installed)
-            warn!("Using password authentication - consider using SSH keys for better security");
+            // Build remote path with SSH
+            if self.nas_config.key_path.is_some() {
+                let key_path = self.nas_config.key_path.as_ref().unwrap();
+                cmd.arg("-e")
+                    .arg(format!(
+                        "ssh -p {} -i {}",
+                        self.nas_config.port, key_path
+                    ));
 
-            cmd.arg("-e")
-                .arg(format!("ssh -p {}", self.nas_config.port));
+                format!(
+                    "{}@{}:{}",
+                    self.nas_config.username,
+                    self.nas_config.host,
+                    profile.remote_path
+                )
+            } else {
+                // Using sshpass for password authentication (requires sshpass to be installed)
+                warn!("Using password authentication - consider using SSH keys for better security");
 
-            format!(
-                "{}@{}:{}",
-                self.nas_config.username,
-                self.nas_config.host,
-                profile.remote_path
-            )
+                cmd.arg("-e")
+                    .arg(format!("ssh -p {}", self.nas_config.port));
+
+                format!(
+                    "{}@{}:{}",
+                    self.nas_config.username,
+                    self.nas_config.host,
+                    profile.remote_path
+                )
+            }
         };
 
         // Add source and destination

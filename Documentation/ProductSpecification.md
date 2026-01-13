@@ -7,9 +7,9 @@
 ## 1. Product Overview
 
 **Product Name:** UGNasSync
-**Version:** 0.1.0
+**Version:** 0.2.0
 **Platform:** Cross-platform (Rust-based)
-**Purpose:** Automated synchronization tool for backing up local directories to NAS (Network Attached Storage) shares using rsync protocol.
+**Purpose:** Automated synchronization tool for backing up local directories to NAS (Network Attached Storage) shares using rsync protocol and SMB/CIFS mounts.
 
 ## 2. Core Features
 
@@ -34,6 +34,23 @@
   - SSH key-based authentication
   - SMB/CIFS share mounting
 
+### 2.6 SMB Mount Support
+- Automatically mount SMB/CIFS shares before sync operations
+- Unmount shares after sync completion (optional)
+- Persistent mount support for watch mode
+- Mount point management and validation
+- Support for SMB authentication (username/password, domain)
+- Configurable mount options (permissions, file modes, etc.)
+- Automatic cleanup of stale mounts
+- Error handling for mount failures
+
+### 2.7 Rsync to SMB Mount
+- Execute rsync operations against locally mounted SMB shares
+- Treat mounted SMB paths as local directories for rsync
+- Leverage local file system performance benefits
+- Support all standard rsync sync types (mirror, one-way, two-way, etc.)
+- Automatic mount/unmount orchestration around rsync operations
+
 ### 2.4 Logging System
 - Comprehensive logging of all sync operations
 - Configurable log levels (debug, info, warn, error)
@@ -41,7 +58,7 @@
 - Timestamped log entries
 - Log both to file and console (configurable)
 
-### 2.5 Real-Time Sync (Watch Mode)
+### 2.8 Real-Time Sync (Watch Mode)
 - Monitor source directories for file system changes
 - Automatically trigger sync operations when changes are detected
 - Configurable per sync profile (enable/disable watch mode)
@@ -58,6 +75,18 @@ port = 22
 username = "admin"
 password = "encrypted_password_here"  # or use key_path
 # key_path = "/path/to/ssh/key"
+
+# SMB/CIFS mount configuration (optional)
+[nas.smb]
+enabled = false
+share_path = "//192.168.1.100/backups"  # UNC path to SMB share
+mount_point = "/mnt/nas"  # Local mount point
+domain = ""  # Optional Windows domain
+username = "admin"  # SMB username (can differ from NAS username)
+password = "smb_password"  # SMB password
+mount_options = "uid=1000,gid=1000,file_mode=0644,dir_mode=0755"  # Optional mount options
+auto_unmount = true  # Unmount after sync (false for persistent mount in watch mode)
+mount_timeout = 30  # Timeout in seconds for mount operations
 
 [logging]
 enabled = true
@@ -79,6 +108,20 @@ remote_path = "/volume1/backups/Documents"
 sync_type = "mirror"
 enabled = true
 exclude = [".git", "*.tmp", "node_modules"]
+use_smb_mount = false  # Use SSH/rsync protocol (default)
+
+# Real-time sync settings
+watch_mode = false
+debounce_seconds = 5
+
+[[sync_profiles]]
+name = "Documents Backup via SMB"
+local_path = "/home/user/Documents"
+remote_path = "/mnt/nas/Documents"  # Path relative to SMB mount point
+sync_type = "mirror"
+enabled = true
+exclude = [".git", "*.tmp", "node_modules"]
+use_smb_mount = true  # Mount SMB share and rsync to local mount point
 
 # Real-time sync settings
 watch_mode = false
@@ -135,6 +178,7 @@ When the same file is modified in both source and destination, conflicts must be
 ### 5.1 Dependencies
 - rsync binary (must be installed on system)
 - SSH client for remote connections
+- mount.cifs or cifs-utils (for SMB/CIFS mounting on Linux)
 - Rust standard library + external crates:
   - `serde` + `toml`/`serde_yaml` for config parsing
   - `tokio` for async operations
@@ -151,12 +195,24 @@ When the same file is modified in both source and destination, conflicts must be
 - Retry logic for transient failures
 - Conflict detection and resolution for two-way sync
 - Report conflicting files in sync summary
+- SMB mount error handling:
+  - Detect if mount point is already mounted
+  - Validate mount point existence and permissions
+  - Handle authentication failures
+  - Timeout on unresponsive mount operations
+  - Clean up stale mounts on startup
+  - Graceful fallback if mount fails
 
 ### 5.3 Security
 - Never log passwords in plain text
 - Support encrypted credential storage
 - Validate file permissions on config file (warn if world-readable)
 - Option to use SSH keys instead of passwords
+- SMB credential security:
+  - Store SMB passwords securely (encrypted or in credentials file)
+  - Avoid passing passwords via command line (use credentials file)
+  - Secure mount point permissions
+  - Validate mount options for security implications
 
 ### 5.4 Logging Implementation Details
 - **Log Levels:**
@@ -225,7 +281,63 @@ When the same file is modified in both source and destination, conflicts must be
   - Queue additional changes if sync is already in progress
   - Graceful shutdown on signal interruption
 
-### 5.6 Two-Way Sync and Conflict Resolution Implementation
+### 5.6 SMB Mount Implementation
+
+- **Mount Operations:**
+  - Use `mount.cifs` or `mount -t cifs` command on Linux
+  - Create mount point directory if it doesn't exist
+  - Check if mount point is already mounted before mounting
+  - Pass credentials via credentials file (not command line)
+  - Apply custom mount options from configuration
+  - Set appropriate timeouts for mount operations
+
+- **Mount Lifecycle:**
+  ```
+  [2026-01-13T10:15:30Z] [INFO] SMB mount enabled for profile: Documents Backup via SMB
+  [2026-01-13T10:15:30Z] [INFO] Checking mount status: /mnt/nas
+  [2026-01-13T10:15:31Z] [INFO] Mounting SMB share: //192.168.1.100/backups -> /mnt/nas
+  [2026-01-13T10:15:32Z] [INFO] SMB share mounted successfully
+  [2026-01-13T10:15:32Z] [INFO] Starting rsync to local mount point
+  [2026-01-13T10:15:40Z] [INFO] Rsync completed successfully
+  [2026-01-13T10:15:40Z] [INFO] Unmounting SMB share: /mnt/nas
+  [2026-01-13T10:15:41Z] [INFO] SMB share unmounted successfully
+  ```
+
+- **Persistent Mounts (Watch Mode):**
+  - When `auto_unmount = false` or watch mode is active, keep mount persistent
+  - Mount once at startup, keep mounted throughout watch mode session
+  - Only unmount on application shutdown or error
+  - Verify mount health periodically (check if share is still accessible)
+
+- **Mount Point Validation:**
+  - Verify mount point path is valid and accessible
+  - Check if mount point is empty before mounting
+  - Warn if mounting over existing mount
+  - Ensure user has permission to mount (may require sudo/capabilities)
+
+- **Credentials Management:**
+  - Create temporary credentials file: `username=<user>\npassword=<pass>\ndomain=<domain>`
+  - Set credentials file permissions to 600 (owner read/write only)
+  - Pass credentials file to mount.cifs with `credentials=` option
+  - Delete credentials file after mount operation
+  - Store path to credentials file in `~/.ugnassync/smb_credentials/` (persistent mode)
+
+- **Error Scenarios:**
+  - **Mount failure:** Log error, skip profile or abort operation
+  - **Already mounted:** Verify it's the correct share, proceed if valid
+  - **Permission denied:** Suggest running with elevated privileges or adding user to required groups
+  - **Network unreachable:** Retry with backoff, log error after max attempts
+  - **Invalid credentials:** Log authentication error, abort operation
+  - **Stale mount:** Attempt unmount and remount
+
+- **Unmount Operations:**
+  - Use `umount` command to unmount share
+  - Check if mount point is busy before unmounting
+  - Force unmount (`umount -l`) if graceful unmount fails
+  - Clean up credentials file after unmount
+  - Handle case where mount was manually unmounted externally
+
+### 5.7 Two-Way Sync and Conflict Resolution Implementation
 
 - **Conflict Detection:**
   - Compare modification timestamps and file sizes between source and destination
@@ -316,7 +428,7 @@ ugnassync --version
 
 **Help Output Example:**
 ```
-UGNasSync v0.1.0
+UGNasSync v0.2.0
 Automated NAS synchronization tool using rsync
 
 Author: Immanuel Jeyaraj <irj@sefier.com>
@@ -345,7 +457,7 @@ EXAMPLES:
 
 **Version Output Example:**
 ```
-UGNasSync v0.1.0
+UGNasSync v0.2.0
 Author: Immanuel Jeyaraj <irj@sefier.com>
 Copyright (c) 2025 Sefier AI
 License: GPL-3.0
@@ -423,3 +535,11 @@ sudo systemctl start ugnassync.service
 - Handle at least 3 different sync profiles in one execution
 - Complete sync of 1GB+ data without errors
 - Proper error messages for common failure scenarios
+- Successfully mount and unmount SMB shares when configured
+- Execute rsync operations against mounted SMB shares
+- Handle mount failures gracefully with appropriate error messages
+- Maintain persistent mounts during watch mode when configured
+- Successfully mount and unmount SMB shares when configured
+- Execute rsync operations against mounted SMB shares
+- Handle mount failures gracefully with appropriate error messages
+- Maintain persistent mounts during watch mode when configured

@@ -10,6 +10,7 @@ Automated NAS synchronization tool using rsync protocol.
 
 - **Configuration-driven operation** - Define multiple sync profiles in a single TOML config file
 - **Multiple sync types** - Mirror, one-way, two-way, incremental, and backup modes
+- **SMB/CIFS mount support** - Mount network shares locally for faster rsync operations
 - **Real-time sync (watch mode)** - Automatically sync when files change
 - **Conflict resolution** - Handle conflicts in two-way sync with configurable strategies
 - **Comprehensive logging** - File and console logging with rotation support
@@ -21,7 +22,8 @@ Automated NAS synchronization tool using rsync protocol.
 
 - Rust toolchain (1.70 or later)
 - rsync binary installed on your system
-- SSH access to your NAS
+- SSH access to your NAS (for SSH/rsync mode)
+- cifs-utils package (for SMB/CIFS mount support on Linux)
 
 ### Building from source
 
@@ -120,6 +122,59 @@ For `sync_type = "two-way"`, specify a `conflict_resolution` strategy:
 - **keep** - Keep both versions with timestamp suffix
 - **newest** - Keep file with most recent modification time
 - **largest** - Keep file with larger size
+
+## SMB/CIFS Mount Support
+
+UGNasSync can mount SMB/CIFS network shares before syncing, then rsync to the local mount point. This provides better performance compared to rsync over SSH for SMB shares.
+
+### Configuration
+
+Add SMB configuration to your config file:
+
+```toml
+[nas.smb]
+enabled = true
+share_path = "//192.168.1.100/backups"
+mount_point = "/mnt/nas"
+domain = ""  # Optional Windows domain
+username = "admin"
+password = "smb_password"
+mount_options = "uid=1000,gid=1000,file_mode=0644,dir_mode=0755"
+auto_unmount = true  # Unmount after sync
+mount_timeout = 30
+
+[[sync_profiles]]
+name = "Documents via SMB"
+local_path = "/home/user/Documents"
+remote_path = "/mnt/nas/Documents"  # Path on mounted share
+sync_type = "mirror"
+enabled = true
+use_smb_mount = true  # Enable SMB mounting for this profile
+```
+
+### Features
+
+- **Automatic mounting/unmounting** - Mounts before sync, unmounts after (configurable)
+- **Persistent mounts** - Keep mounted in watch mode (set `auto_unmount = false`)
+- **Secure credentials** - Stored in `~/.ugnassync/smb_credentials/` with 600 permissions
+- **Error handling** - Handles permission errors, network issues, invalid credentials
+- **Mount validation** - Checks if already mounted, validates mount points
+
+### Requirements
+
+```bash
+# Install cifs-utils (Linux)
+sudo apt install cifs-utils  # Debian/Ubuntu
+sudo dnf install cifs-utils  # Fedora
+sudo pacman -S cifs-utils    # Arch
+
+# May require elevated privileges for mounting
+# Option 1: Run with sudo
+sudo ugnassync
+
+# Option 2: Add user to required groups and configure capabilities
+# (See system documentation for details)
+```
 
 ## Systemd Integration
 

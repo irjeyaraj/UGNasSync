@@ -11,6 +11,18 @@ username = "admin"
 password = "your_password_here"
 # key_path = "/home/user/.ssh/id_rsa"
 
+# SMB/CIFS mount configuration (optional)
+[nas.smb]
+enabled = false
+share_path = "//192.168.1.100/backups"  # UNC path to SMB share
+mount_point = "/mnt/nas"  # Local mount point
+domain = ""  # Optional Windows domain
+username = "admin"  # SMB username (can differ from NAS username)
+password = "smb_password"  # SMB password
+mount_options = "uid=1000,gid=1000,file_mode=0644,dir_mode=0755"  # Optional mount options
+auto_unmount = true  # Unmount after sync (false for persistent mount in watch mode)
+mount_timeout = 30  # Timeout in seconds for mount operations
+
 [logging]
 enabled = true
 log_file = "/var/log/ugnassync/sync.log"
@@ -31,6 +43,20 @@ remote_path = "/volume1/backups/Documents"
 sync_type = "mirror"
 enabled = true
 exclude = [".git", "*.tmp", "node_modules"]
+use_smb_mount = false  # Use SSH/rsync protocol (default)
+
+# Real-time sync settings
+watch_mode = false
+debounce_seconds = 5
+
+[[sync_profiles]]
+name = "Documents Backup via SMB"
+local_path = "/home/user/Documents"
+remote_path = "/mnt/nas/Documents"  # Path relative to SMB mount point
+sync_type = "mirror"
+enabled = false  # Disabled by default, enable when using SMB
+exclude = [".git", "*.tmp", "node_modules"]
+use_smb_mount = true  # Mount SMB share and rsync to local mount point
 
 # Real-time sync settings
 watch_mode = false

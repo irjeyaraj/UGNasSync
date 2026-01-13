@@ -6,6 +6,7 @@
 mod config;
 mod conflict;
 mod logging;
+mod smb;
 mod sync;
 mod watch;
 

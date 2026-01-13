@@ -24,6 +24,33 @@ pub struct NasConfig {
     pub password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smb: Option<SmbConfig>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SmbConfig {
+    pub enabled: bool,
+    pub share_path: String,
+    pub mount_point: String,
+    #[serde(default)]
+    pub domain: String,
+    pub username: String,
+    pub password: String,
+    #[serde(default)]
+    pub mount_options: String,
+    #[serde(default = "default_auto_unmount")]
+    pub auto_unmount: bool,
+    #[serde(default = "default_mount_timeout")]
+    pub mount_timeout: u64,
+}
+
+fn default_auto_unmount() -> bool {
+    true
+}
+
+fn default_mount_timeout() -> u64 {
+    30
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -54,6 +81,8 @@ pub struct SyncProfile {
     pub debounce_seconds: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conflict_resolution: Option<ConflictResolution>,
+    #[serde(default)]
+    pub use_smb_mount: bool,
 }
 
 fn default_debounce_seconds() -> u64 {
